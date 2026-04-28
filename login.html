@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WaterTest - Вход</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="auth-page">
+        <div class="card auth-card">
+            <div class="auth-tabs">
+                <div class="auth-tab active" id="tab-login" style="cursor:pointer">Вход</div>
+                <div class="auth-tab" id="tab-register" style="cursor:pointer">Регистрация</div>
+            </div>
+            <div id="auth-form"></div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        function showLoginForm() {
+            document.getElementById('auth-form').innerHTML = `
+                <form id="login-form">
+                    <div class="form-group">
+                        <label class="form-label">Email</label>
+                        <input type="email" name="email" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Пароль</label>
+                        <input type="password" name="password" class="form-input" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width:100%">Войти</button>
+                    <p style="text-align:center;margin-top:15px;color:var(--gray)">Тест: admin@water.local / 123456</p>
+                </form>
+            `;
+            document.getElementById('login-form').addEventListener('submit', handleLogin);
+        }
+
+        function showRegisterForm() {
+            document.getElementById('auth-form').innerHTML = `
+                <form id="register-form">
+                    <div class="form-group">
+                        <label class="form-label">Имя *</label>
+                        <input type="text" name="name" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Email *</label>
+                        <input type="email" name="email" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Пароль *</label>
+                        <input type="password" name="password" class="form-input" required minlength="6">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Должность</label>
+                        <input type="text" name="position" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Отдел</label>
+                        <input type="text" name="department" class="form-input">
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width:100%">Зарегистрироваться</button>
+                </form>
+            `;
+            document.getElementById('register-form').addEventListener('submit', handleRegister);
+        }
+
+        function handleLogin(e) {
+            e.preventDefault();
+            const form = e.target;
+            const result = login(form.email.value, form.password.value);
+            if (result.success) {
+                saveCurrentUser(result.user);
+                if (result.user.role === 'admin' || result.user.role === 'hr') {
+                    window.location.href = 'admin.html';
+                } else {
+                    window.location.href = 'employee.html';
+                }
+            } else {
+                alert(result.error);
+            }
+        }
+
+        function handleRegister(e) {
+            e.preventDefault();
+            const form = e.target;
+            const result = register({
+                name: form.name.value,
+                email: form.email.value,
+                password: form.password.value,
+                position: form.position.value,
+                department: form.department.value
+            });
+            if (result.success) {
+                saveCurrentUser(result.user);
+                window.location.href = 'employee.html';
+            } else {
+                alert(result.error);
+            }
+        }
+
+        // Check if already logged in
+        const user = getCurrentUser();
+        if (user) {
+            if (user.role === 'admin' || user.role === 'hr') {
+                window.location.href = 'admin.html';
+            } else {
+                window.location.href = 'employee.html';
+            }
+        }
+
+        // Tab handlers
+        document.getElementById('tab-login').onclick = function() {
+            document.getElementById('tab-login').classList.add('active');
+            document.getElementById('tab-register').classList.remove('active');
+            showLoginForm();
+        };
+
+        document.getElementById('tab-register').onclick = function() {
+            document.getElementById('tab-register').classList.add('active');
+            document.getElementById('tab-login').classList.remove('active');
+            showRegisterForm();
+        };
+
+        // Init
+        showLoginForm();
+    </script>
+</body>
+</html>

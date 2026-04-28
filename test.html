@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WaterTest - Тест</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header class="header">
+        <div class="header-logo">
+            <svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="18" fill="#00b4d8"/><path d="M20 8v24M12 16c0-4 8-8 8-8s8 4 8 8M14 24c0-3 6-6 6-6s6 3 6 6" stroke="white" stroke-width="2"/></svg>
+            <span id="test-title">Тест</span>
+        </div>
+        <nav class="header-nav">
+            <div class="timer" id="timer">00:00</div>
+            <button class="btn btn-outline btn-sm" onclick="exitTest()">Выход</button>
+        </nav>
+    </header>
+
+    <div class="container">
+        <div id="test-content"></div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        var testId = sessionStorage.getItem('currentTestId');
+        var user = getCurrentUser();
+        
+        if (!user || !testId) {
+            window.location.href = 'login.html';
+        }
+
+        var test = getTests({ id: testId })[0];
+        var questions = getQuestions(testId);
+        
+        if (!test || questions.length === 0) {
+            alert('Тест не найден');
+            window.location.href = 'employee.html';
+        }
+
+        document.getElementById('test-title').textContent = test.title;
+
+        var currentQuestion = 0;
+        var answers = {};
+        var timeLeft = (test.timeLimit || 30) * 60;
+        var timerInterval;
+
+        function startTimer() {
+            updateTimerDisplay();
+            timerInterval = setInterval(function() {
+                timeLeft--;
+                updateTimerDisplay();
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    submitTest();
+                }
+            }, 1000);
+        }
+
+        function updateTimerDisplay() {
+            var m = Math.floor(timeLeft / 60);
+            var s = timeLeft % 60;
+            var el = document.getElementById('timer');
+            el.textContent = m.toString().padStart(2, '0') + ':' + s.toString().padStart(2, '0');
+            if (timeLeft < 60) el.classList.add('timer-danger');
+            else el.classList.remove('timer-danger');
+        }
+
+        function render() {
+            var q = questions[currentQuestion];
+            var total = questions.length;
+            
+            var dotsHtml = '';
+            for (var i = 0; i < questions.length; i++) {
+                var dotClass = 'dot';
+                if (i === currentQuestion) dotClass += ' active';
+                if (answers[i] !== undefined) dotClass += ' answered';
+                dotsHtml += '<span class="' + dotClass + '" data-index="' + i + '">' + (i + 1) + '</span>';
+            }
+            
+            var navHtml = '';
+            if (currentQuestion > 0) {
+                ;
+            }
+            if (currentQuestion < total - 1) {
+                navHtml += '<button class="btn btn-primary" id="next-btn">Далее</button>';
+            } else {
+                navHtml += '<button class="btn btn-success" id="submit-btn">Завершить</button>';
+            }
+            
+            var answersHtml = '';
+            if (q.type === 'text') {
+                answersHtml = '<textarea class="form-textarea" id="text-answer" rows="4">' + (answers[currentQuestion] || '') + '</textarea>';
+            } else {
+                for (var i = 0; i < q.options.length; i++) {
+                    var isSelected = (q.type === 'multiple') 
+                        ? ((answers[currentQuestion] || []).indexOf(i) >= 0)
+                        : answers[currentQuestion] === i;
+                    answersHtml += '<label class="answer-option' + (isSelected ? ' selected' : '') + '">' +
+                        '<input type="' + (q.type === 'multiple' ? 'checkbox' : 'radio') + '" name="answer" value="' + i + '"' + (isSelected ? ' checked' : '') + ' data-index="' + i + '">' +
+                        '<span class="answer-text">' + escapeHtml(q.options[i]) + '</span>' +
+                    '</label>';
+                }
+            }
+            
+            document.getElementById('test-content').innerHTML = '<div class="card">' +
+                '<div class="test-progress">' +
+                '<span>Вопрос ' + (currentQuestion + 1) + ' из ' + total + '</span>' +
+                '<div class="progress-bar"><div class="progress-fill" style="width:' + (((currentQuestion + 1) / total) * 100) + '%"></div></div>' +
+                '</div>' +
+                '<div class="question-text">' + escapeHtml(q.text) + '</div>' +
+                '<div class="answers-list" id="answers-container">' + answersHtml + '</div>' +
+                '<div class="test-nav">' + navHtml + '<span class="question-dots">' + dotsHtml + '</span></div>' +
+            '</div>';
+            
+            if (document.getElementById('prev-btn')) {
+                document.getElementById('prev-btn').onclick = function() { prevQuestion(); };
+            }
+            if (document.getElementById('next-btn')) {
+                document.getElementById('next-btn').onclick = function() { nextQuestion(); };
+            }
+            if (document.getElementById('submit-btn')) {
+                document.getElementById('submit-btn').onclick = function() { submitTest(); };
+            }
+            
+            var dots = document.querySelectorAll('.question-dots .dot');
+            for (var i = 0; i < dots.length; i++) {
+                dots[i].onclick = function() {
+                    goToQuestion(parseInt(this.getAttribute('data-index')));
+                };
+            }
+            
+            var answerInputs = document.querySelectorAll('#answers-container input');
+            for (var i = 0; i < answerInputs.length; i++) {
+                answerInputs[i].onclick = function() {
+                    selectAnswer(parseInt(this.getAttribute('data-index')));
+                };
+            }
+        }
+
+        function selectAnswer(index) {
+            var q = questions[currentQuestion];
+            if (q.type === 'multiple') {
+                if (!answers[currentQuestion]) answers[currentQuestion] = [];
+                var idx = answers[currentQuestion].indexOf(index);
+                if (idx >= 0) answers[currentQuestion].splice(idx, 1);
+                else answers[currentQuestion].push(index);
+            } else {
+                answers[currentQuestion] = index;
+            }
+            render();
+        }
+
+        function prevQuestion() {
+            if (currentQuestion > 0) { currentQuestion--; render(); }
+        }
+
+        function nextQuestion() {
+            if (currentQuestion < questions.length - 1) { currentQuestion++; render(); }
+        }
+
+        function goToQuestion(index) {
+            currentQuestion = index;
+            render();
+        }
+
+        function submitTest() {
+            clearInterval(timerInterval);
+            
+            var correct = 0;
+            var totalAnswered = 0;
+            
+            for (var i = 0; i < questions.length; i++) {
+                if (answers[i] === undefined) continue;
+                totalAnswered++;
+                
+                if (questions[i].type === 'text') continue;
+                
+                var userAnswer = answers[i];
+                var correctAnswer = questions[i].correctAnswer;
+                
+                if (questions[i].type === 'multiple') {
+                    var userAns = answers[i] || [];
+                    var correctSet = new Set(questions[i].correctAnswer);
+                    var userSet = new Set(userAns);
+                    if (correctSet.size === userSet.size && Array.from(correctSet).every(function(x) { return userSet.has(x); })) {
+                        correct++;
+                    }
+                } else {
+                    if (userAnswer == correctAnswer) {
+                        correct++;
+                    }
+                }
+            }
+            
+            var percent = totalAnswered > 0 ? Math.round((correct / totalAnswered) * 100) : 0;
+            var g = getGrade(percent);
+            
+            saveResult({
+                userId: user.id,
+                testId: testId,
+                score: correct,
+                total: totalAnswered,
+                percent: percent
+            });
+
+            document.getElementById('test-content').innerHTML = '<div class="card" style="text-align:center;padding:40px">' +
+                '<h2>Тест завершён!</h2>' +
+                '<div class="result-large">' +
+                '<div class="result-score ' + g.class + '">' + percent + '%</div>' +
+                '<div class="result-grade">Оценка: ' + g.grade + '</div>' +
+                '<div class="result-label">' + g.label + '</div>' +
+                '</div>' +
+                '<p>Вы ответили правильно на ' + correct + ' из ' + totalAnswered + ' вопросов.</p>' +
+                '<a href="employee.html" class="btn btn-primary">Назад в панель</a>' +
+            '</div>';
+        }
+
+        function exitTest() {
+            if (confirm('Вы уверены? Ваш прогресс будет потерян.')) {
+                clearInterval(timerInterval);
+                window.location.href = 'employee.html';
+            }
+        }
+
+        window.onbeforeunload = function() {
+            return 'Ваш прогресс будет потерян. Вы уверены?';
+        };
+
+        render();
+        startTimer();
+    </script>
+</body>
+</html>

@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WaterTest - Админ</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header class="header">
+        <div class="header-logo">
+            <svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="18" fill="#00b4d8"/><path d="M20 8v24M12 16c0-4 8-8 8-8s8 4 8 8M14 24c0-3 6-6 6-6s6 3 6 6" stroke="white" stroke-width="2"/></svg>
+            WaterTest - Админ
+        </div>
+        <nav class="header-nav">
+            <span id="user-name"></span>
+            <button class="btn btn-outline btn-sm" onclick="logout()">Выход</button>
+        </nav>
+    </header>
+
+    <div class="container">
+        <div class="tabs" id="tabs">
+            <div class="tab active" id="tab-users" data-tab="users">Сотрудники</div>
+            <div class="tab" id="tab-tests" data-tab="tests">Тесты</div>
+            <div class="tab" id="tab-results" data-tab="results">Результаты</div>
+            <div class="tab" id="tab-stats" data-tab="stats">Статистика</div>
+        </div>
+        
+        <div id="content"></div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+    (function() {
+        var user = getCurrentUser();
+        if (!user || (user.role !== 'admin' && user.role !== 'hr')) {
+            window.location.href = 'login.html';
+            return;
+        }
+        document.getElementById('user-name').textContent = user.name;
+        
+        var currentTab = 'users';
+        
+        document.querySelectorAll('#tabs .tab').forEach(function(tab) {
+            tab.onclick = function() {
+                switchTab(this.getAttribute('data-tab'));
+            };
+        });
+        
+        window.switchTab = function(tab) {
+            currentTab = tab;
+            document.querySelectorAll('#tabs .tab').forEach(function(t) {
+                t.classList.remove('active');
+            });
+            document.querySelector('#tab-' + tab).classList.add('active');
+            render();
+        };
+        
+        window.closeModal = function() {
+            var el = document.querySelector('.modal-overlay');
+            if (el) el.remove();
+        };
+        
+        function render() {
+            switch(currentTab) {
+                case 'users': renderUsers(); break;
+                case 'tests': renderTests(); break;
+                case 'results': renderResults(); break;
+                case 'stats': renderStats(); break;
+            }
+        }
+        
+        window.renderUsers = renderUsers;
+        
+        function renderUsers() {
+            var users = getUsers();
+            var st = getStats();
+            var html = '<div class="dashboard-grid">' +
+                '<div class="stat-card"><div class="stat-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/></svg></div><div><div class="stat-value">' + users.length + '</div><div class="stat-label">Сотрудников</div></div></div>' +
+                '<div class="stat-card"><div class="stat-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div><div><div class="stat-value">' + st.completed + '</div><div class="stat-label">Тестов пройдено</div></div></div>' +
+                '<div class="stat-card"><div class="stat-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div><div><div class="stat-value">' + st.avgScore + '%</div><div class="stat-label">Средний балл</div></div></div>' +
+            '</div>' +
+            '<div class="card">' +
+                '<div class="card-header"><h2 class="card-title">Сотрудники</h2><button class="btn btn-primary" onclick="showAddUser()">+ Добавить</button></div>' +
+                '<div class="table-wrapper"><table class="table"><thead><tr><th>Имя</th><th>Email</th><th>Должность</th><th>Отдел</th><th>Роль</th><th>Статус</th><th>Действия</th></tr></thead><tbody>';
+            
+            users.forEach(function(u) {
+                html += '<tr><td>' + escapeHtml(u.name) + '</td><td>' + escapeHtml(u.email) + '</td><td>' + escapeHtml(u.position || '-') + '</td><td>' + escapeHtml(u.department || '-') + '</td><td><span class="role-badge ' + u.role + '">' + u.role + '</span></td><td><span class="result-badge ' + (u.active ? 'excellent' : 'failed') + '">' + (u.active ? 'Активен' : 'Заблокирован') + '</span></td>' +
+                '<td class="flex gap-10">' +
+                    '<button class="btn btn-sm btn-primary" onclick="showEditUser(\'' + u.id + '\')">Редактировать</button> ' +
+                    '<button class="btn btn-sm ' + (u.active ? 'btn-warning' : 'btn-success') + '" onclick="toggleUserStatus(\'' + u.id + '\'); renderUsers();">' + (u.active ? 'Блок' : 'Разблок') + '</button> ' +
+                    '<button class="btn btn-sm btn-outline" onclick="resetPassword(\'' + u.id + '\'); alert(\'Сброшено на 123456\')">Сброс</button> ' +
+                    '<button class="btn btn-sm btn-danger" onclick="deleteUser(\'' + u.id + '\'); renderUsers();" ' + (u.role === 'admin' ? 'disabled' : '') + '>Удалить</button>' +
+                '</td></tr>';
+            });
+            
+            html += '</tbody></table></div></div>';
+            document.getElementById('content').innerHTML = html;
+        }
+        
+        window.showAddUser = function() {
+            var body = '<form id="add-user-form">' +
+                '<div class="form-group"><label class="form-label">Имя *</label><input type="text" name="name" class="form-input" required></div>' +
+                '<div class="form-group"><label class="form-label">Email *</label><input type="email" name="email" class="form-input" required></div>' +
+                '<div class="form-group"><label class="form-label">Пароль *</label><input type="password" name="password" class="form-input" required></div>' +
+                '<div class="form-group"><label class="form-label">Должность</label><input type="text" name="position" class="form-input"></div>' +
+                '<div class="form-group"><label class="form-label">Отдел</label><input type="text" name="department" class="form-input"></div>' +
+                '<div class="form-group"><label class="form-label">Роль</label><select name="role" class="form-select"><option value="employee">Сотрудник</option><option value="hr">HR</option><option value="admin">Админ</option></select></div>' +
+            '</form>';
+            
+            var div = document.createElement('div');
+            div.className = 'modal-overlay';
+            div.onclick = window.closeModal;
+            div.innerHTML = '<div class="modal" onclick="event.stopPropagation()">' +
+                '<div class="modal-header"><h3 class="modal-title">Добавить сотрудника</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>' +
+                '<div class="modal-body">' + body + '</div>' +
+                '<div class="modal-footer"><button class="btn btn-primary" onclick="addUser()">Добавить</button><button class="btn btn-outline" onclick="closeModal()">Отмена</button></div>' +
+            '</div>';
+            document.body.appendChild(div);
+        };
+        
+        window.addUser = function() {
+            var f = document.getElementById('add-user-form');
+            register({ name: f.name.value, email: f.email.value, password: f.password.value, position: f.position.value, department: f.department.value, role: f.role.value });
+            closeModal();
+            renderUsers();
+        };
+        
+        window.showEditUser = function(id) {
+            var u = getUsers().find(function(x) { return x.id === id; });
+            var body = '<form id="edit-user-form">' +
+                '<div class="form-group"><label class="form-label">Имя</label><input type="text" name="name" class="form-input" value="' + escapeHtml(u.name) + '"></div>' +
+                '<div class="form-group"><label class="form-label">Email</label><input type="email" name="email" class="form-input" value="' + escapeHtml(u.email) + '"></div>' +
+                '<div class="form-group"><label class="form-label">Новый пароль</label><input type="password" name="password" class="form-input" placeholder="Оставить текущий"></div>' +
+                '<div class="form-group"><label class="form-label">Должность</label><input type="text" name="position" class="form-input" value="' + escapeHtml(u.position || '') + '"></div>' +
+                '<div class="form-group"><label class="form-label">Отдел</label><input type="text" name="department" class="form-input" value="' + escapeHtml(u.department || '') + '"></div>' +
+                '<div class="form-group"><label class="form-label">Роль</label><select name="role" class="form-select"><option value="employee" ' + (u.role === 'employee' ? 'selected' : '') + '>Сотрудник</option><option value="hr" ' + (u.role === 'hr' ? 'selected' : '') + '>HR</option><option value="admin" ' + (u.role === 'admin' ? 'selected' : '') + '>Админ</option></select></div>' +
+            '</form>';
+            
+            var div = document.createElement('div');
+            div.className = 'modal-overlay';
+            div.onclick = window.closeModal;
+            div.innerHTML = '<div class="modal" onclick="event.stopPropagation()">' +
+                '<div class="modal-header"><h3 class="modal-title">Редактировать сотрудника</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>' +
+                '<div class="modal-body">' + body + '</div>' +
+                '<div class="modal-footer"><button class="btn btn-primary" onclick="updateUser(\'' + u.id + '\')">Сохранить</button><button class="btn btn-outline" onclick="closeModal()">Отмена</button></div>' +
+            '</div>';
+            document.body.appendChild(div);
+        };
+        
+        window.updateUser = function(id) {
+            var f = document.getElementById('edit-user-form');
+            var d = { name: f.name.value, email: f.email.value, position: f.position.value, department: f.department.value, role: f.role.value };
+            if (f.password.value) d.password = f.password.value;
+            updateUser(id, d);
+            closeModal();
+            renderUsers();
+        };
+        
+        // ==================== TESTS ====================
+        function renderTests() {
+            var tests = getTests();
+            var html = '<div class="card">' +
+                '<div class="card-header"><h2 class="card-title">Тесты</h2><button class="btn btn-primary" onclick="showAddTest()">+ Создать</button></div>';
+            
+            if (tests.length === 0) {
+                html += '<div class="empty-state"><h3>Нет тестов</h3></div>';
+            } else {
+                html += '<div class="table-wrapper"><table class="table"><thead><tr><th>Название</th><th>Категория</th><th>Вопросы</th><th>Время</th><th>Статус</th><th>Действия</th></tr></thead><tbody>';
+                tests.forEach(function(t) {
+                    html += '<tr><td>' + escapeHtml(t.title) + '</td><td>' + escapeHtml(t.category || '-') + '</td><td>' + getQuestions(t.id).length + '</td><td>' + (t.timeLimit || '-') + '</td><td><span class="result-badge ' + (t.published ? 'excellent' : 'pending') + '">' + (t.published ? 'Опубликован' : 'Черновик') + '</span></td>' +
+                    '<td class="flex gap-10">' +
+                        '<button class="btn btn-sm btn-primary" onclick="showEditTest(\'' + t.id + '\')">Редактировать</button> ' +
+                        '<button class="btn btn-sm btn-success" onclick="showAssign(\'' + t.id + '\')">Назначить</button> ' +
+                        '<button class="btn btn-sm btn-danger" onclick="deleteTest(\'' + t.id + '\'); renderTests();">Удалить</button>' +
+                    '</td></tr>';
+                });
+                html += '</tbody></table></div>';
+            }
+            html += '</div>';
+            document.getElementById('content').innerHTML = html;
+        }
+        
+        window.showAddTest = function() {
+            var body = document.createElement('form');
+            body.id = 'test-form';
+            body.innerHTML = 
+                '<div class="form-group"><label class="form-label">Название *</label><input type="text" name="title" class="form-input" required></div>' +
+                '<div class="form-group"><label class="form-label">Описание</label><textarea name="description" class="form-textarea"></textarea></div>' +
+                '<div class="form-group"><label class="form-label">Категория</label><select name="category" class="form-select"><option value="">Выбрать</option><option value="OT TB">ОТ и ТБ</option><option value="Technology">Технологические процессы</option><option value="Equipment">Сантехническое оборудование</option><option value="Water supply">Водоснабжение</option><option value="Regulations">Нормативы</option><option value="Ecology">Экология</option><option value="Electrical">Электробезопасность</option><option value="First aid">Первая помощь</option><option value="Fire">Пожарная безопасность</option></select></div>' +
+                '<div class="form-group"><label class="form-label">Время (минуты)</label><input type="number" name="timeLimit" class="form-input" value="30"></div>' +
+                '<div class="form-group"><label class="form-label"><input type="checkbox" name="published"> Опубликован</label></div>';
+            
+            var modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.onclick = function(e) { if (e.target === modal) closeModal(); };
+            modal.innerHTML = '<div class="modal" onclick="event.stopPropagation()">' +
+                '<div class="modal-header"><h3 class="modal-title">Создать тест</h3><button class="modal-close" id="modal-close-btn">&times;</button></div>' +
+                '<div class="modal-body"></div>' +
+                '<div class="modal-footer"><button class="btn btn-primary" id="save-test-btn">Сохранить</button><button class="btn btn-outline" id="cancel-btn">Отмена</button></div>' +
+            '</div>';
+            modal.querySelector('.modal-body').appendChild(body);
+            document.body.appendChild(modal);
+            
+            document.getElementById('modal-close-btn').onclick = closeModal;
+            document.getElementById('cancel-btn').onclick = closeModal;
+            document.getElementById('save-test-btn').onclick = function() {
+                var f = document.getElementById('test-form');
+                var t = { title: f.title.value, description: f.description.value, category: f.category.value, timeLimit: parseInt(f.timeLimit.value), published: f.published.checked };
+                saveTest(t);
+                closeModal();
+                renderTests();
+            };
+        };
+        
+        window.saveTest = function(id) {
+            var f = document.getElementById('test-form');
+            var t = { title: f.title.value, description: f.description.value, category: f.category.value, timeLimit: parseInt(f.timeLimit.value), published: f.published.checked };
+            if (id) t.id = id;
+            saveTest(t);
+            closeModal();
+            renderTests();
+        };
+        
+        window.showEditTest = function(id) {
+            var t = getTests({ id: id })[0];
+            var qs = getQuestions(id);
+            
+            var body = '<form id="test-form">' +
+                '<div class="form-group"><label class="form-label">Название</label><input type="text" name="title" class="form-input" value="' + escapeHtml(t.title) + '"></div>' +
+                '<div class="form-group"><label class="form-label">Описание</label><textarea name="description" class="form-textarea">' + escapeHtml(t.description || '') + '</textarea></div>' +
+                '<div class="form-group"><label class="form-label">Время</label><input type="number" name="timeLimit" class="form-input" value="' + (t.timeLimit || 30) + '"></div>' +
+                '<div class="form-group"><label class="form-label"><input type="checkbox" name="published" ' + (t.published ? 'checked' : '') + '> Опубликован</label></div>' +
+                '<button class="btn btn-primary" onclick="saveTest(\'' + t.id + '\')">Сохранить</button>' +
+            '</form>' +
+            '<hr style="margin:20px 0">' +
+            '<button class="btn btn-primary mb-20" onclick="showAddQuestion(\'' + t.id + '\')">+ Добавить вопрос</button>';
+            
+            qs.forEach(function(q, i) {
+                body += '<div class="card"><div class="flex flex-between"><strong>Вопрос ' + (i+1) + '</strong><button class="btn btn-sm btn-danger" onclick="deleteQuestion(\'' + q.id + '\'); showEditTest(\'' + t.id + '\');">Удалить</button></div><p>' + escapeHtml(q.text) + '</p><p style="color:var(--gray)">Тип: ' + q.type + '</p></div>';
+            });
+            
+            var div = document.createElement('div');
+            div.className = 'modal-overlay';
+            div.onclick = window.closeModal;
+            div.innerHTML = '<div class="modal" onclick="event.stopPropagation()">' +
+                '<div class="modal-header"><h3 class="modal-title">Редактировать тест</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>' +
+                '<div class="modal-body">' + body + '</div>' +
+                '<div class="modal-footer"><button class="btn btn-outline" onclick="closeModal(); renderTests();">Закрыть</button></div>' +
+            '</div>';
+            document.body.appendChild(div);
+        };
+        
+        window.showAddQuestion = function(testId) {
+            var body = '<form id="question-form">' +
+                '<div class="form-group"><label class="form-label">Вопрос</label><textarea name="text" class="form-textarea" required></textarea></div>' +
+                '<div class="form-group"><label class="form-label">Тип</label><select name="type" class="form-select"><option value="single">Один ответ</option><option value="multiple">Несколько ответов</option><option value="text">Текст</option></select></div>' +
+                '<div class="form-group"><label class="form-label">Варианты (по одному в строке)</label><textarea name="options" class="form-textarea"></textarea></div>' +
+                '<div class="form-group"><label class="form-label">Правильный (1,2,3)</label><input type="text" name="correctAnswer" class="form-input"></div>' +
+            '</form>';
+            
+            var div = document.createElement('div');
+            div.className = 'modal-overlay';
+            div.onclick = window.closeModal;
+            div.innerHTML = '<div class="modal" onclick="event.stopPropagation()">' +
+                '<div class="modal-header"><h3 class="modal-title">Добавить вопрос</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>' +
+                '<div class="modal-body">' + body + '</div>' +
+                '<div class="modal-footer"><button class="btn btn-primary" onclick="saveQuestion(\'' + testId + '\')">Сохранить</button><button class="btn btn-outline" onclick="closeModal()">Отмена</button></div>' +
+            '</div>';
+            document.body.appendChild(div);
+        };
+        
+        window.saveQuestion = function(testId) {
+            var f = document.getElementById('question-form');
+            var q = { testId: testId, text: f.text.value, type: f.type.value };
+            if (f.type.value !== 'text') {
+                q.options = f.options.value.split('\n').filter(function(o) { return o.trim(); });
+                q.correctAnswer = f.type.value === 'multiple' ? f.correctAnswer.value.split(',').map(function(a) { return parseInt(a.trim())-1; }) : parseInt(f.correctAnswer.value)-1;
+            }
+            saveQuestion(q);
+            closeModal();
+            showEditTest(testId);
+        };
+        
+        window.showAssign = function(testId) {
+            var us = getUsers({ role: 'employee' });
+            var t = getTests({ id: testId })[0];
+            var depts = [...new Set(us.map(function(x) { return x.department; }).filter(function(d) { return d; }))];
+            
+            var body = '<p>Назначение: <strong>' + escapeHtml(t.title) + '</strong></p>' +
+                '<form id="assign-form">' +
+                '<div class="form-group"><label class="form-label">Тип</label><select name="assignType" class="form-select"><option value="user">Сотруднику</option><option value="department">Отделу</option></select></div>' +
+                '<div id="assign-user-field"><div class="form-group"><label class="form-label">Сотрудник</label><select name="userId" class="form-select">';
+            
+            us.forEach(function(u) {
+                body += '<option value="' + u.id + '">' + escapeHtml(u.name) + '</option>';
+            });
+            
+            body += '</select></div></div>' +
+                '<div id="assign-dept-field" class="hidden"><div class="form-group"><label class="form-label">Отдел</label><select name="department" class="form-select">';
+            
+            depts.forEach(function(d) {
+                body += '<option value="' + d + '">' + d + '</option>';
+            });
+            
+            body += '</select></div></div>' +
+                '<div class="form-group"><label class="form-label">Срок сдачи</label><input type="date" name="dueDate" class="form-input"></div>' +
+            '</form>';
+            
+            var div = document.createElement('div');
+            div.className = 'modal-overlay';
+            div.onclick = window.closeModal;
+            div.innerHTML = '<div class="modal" onclick="event.stopPropagation()">' +
+                '<div class="modal-header"><h3 class="modal-title">Назначить тест</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>' +
+                '<div class="modal-body">' + body + '</div>' +
+                '<div class="modal-footer"><button class="btn btn-primary" onclick="doAssign(\'' + testId + '\')">Назначить</button><button class="btn btn-outline" onclick="closeModal()">Отмена</button></div>' +
+            '</div>';
+            document.body.appendChild(div);
+        };
+        
+        window.doAssign = function(testId) {
+            var f = document.getElementById('assign-form');
+            var type = f.assignType.value;
+            if (type === 'department') {
+                assignTest({ testId: testId, department: f.department.value, dueDate: f.dueDate.value, attempts: 1 });
+            } else {
+                assignTest({ testId: testId, userId: f.userId.value, dueDate: f.dueDate.value, attempts: 1 });
+            }
+            closeModal();
+            alert('Назначено!');
+        };
+        
+        // ==================== RESULTS ====================
+        function renderResults() {
+            var rs = getAllResults();
+            var us = getUsers();
+            var html = '<div class="card">' +
+                '<div class="card-header"><h2 class="card-title">Все результаты</h2></div>';
+            
+            if (rs.length === 0) {
+                html += '<div class="empty-state"><h3>Нет результатов</h3></div>';
+            } else {
+                html += '<div class="table-wrapper"><table class="table"><thead><tr><th>Сотрудник</th><th>Тест</th><th>Балл</th><th>Оценка</th><th>Дата</th></tr></thead><tbody>';
+                rs.forEach(function(r) {
+                    var u = us.find(function(x) { return x.id === r.userId; });
+                    var t = getTests({ id: r.testId })[0];
+                    var g = getGrade(r.percent);
+                    html += '<tr><td>' + escapeHtml(u ? u.name : '-') + '</td><td>' + escapeHtml(t ? t.title : '-') + '</td><td>' + r.percent + '%</td><td><span class="result-badge ' + g.class + '">' + g.grade + '</span></td><td>' + formatDateTime(r.completedAt) + '</td></tr>';
+                });
+                html += '</tbody></table></div>';
+            }
+            html += '</div>';
+            document.getElementById('content').innerHTML = html;
+        }
+        
+        // ==================== STATS ====================
+        function renderStats() {
+            var us = getUsers();
+            var rs = getAllResults();
+            var depts = [...new Set(us.map(function(x) { return x.department; }).filter(function(d) { return d; }))];
+            var html = '<div class="card"><h2 class="card-title">Статистика по отделам</h2>';
+            
+            if (depts.length === 0) {
+                html += '<p>Нет отделов</p>';
+            } else {
+                html += '<div class="table-wrapper"><table class="table"><thead><tr><th>Отдел</th><th>Сотрудники</th><th>Средний балл</th><th>Тестов пройдено</th></tr></thead><tbody>';
+                depts.forEach(function(d) {
+                    var du = us.filter(function(x) { return x.department === d; });
+                    var dr = rs.filter(function(x) { return du.some(function(y) { return y.id === x.userId; }); });
+                    var avg = dr.length ? Math.round(dr.reduce(function(s, x) { return s + x.percent; }, 0) / dr.length) : 0;
+                    html += '<tr><td>' + d + '</td><td>' + du.length + '</td><td>' + avg + '%</td><td>' + dr.length + '</td></tr>';
+                });
+                html += '</tbody></table></div>';
+            }
+            html += '</div>';
+            document.getElementById('content').innerHTML = html;
+        }
+        
+        render();
+    })();
+    </script>
+</body>
+</html>
