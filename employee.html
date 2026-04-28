@@ -3,8 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WaterTest - Панель</title>
+    <title>Вода Донбасса - Панель</title>
     <link rel="stylesheet" href="styles.css">
+    <style>
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: #0077b6;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+        .history-item {
+            padding: 15px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .history-item:last-child {
+            border-bottom: none;
+        }
+        .badge-overdue {
+            background: #dc3545;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .badge-completed {
+            background: #28a745;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .badge-pending {
+            background: #ffc107;
+            color: black;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+    </style>
 </head>
 <body>
     <header class="header">
@@ -15,7 +68,7 @@
                 <path d="M25 55h30M25 55c0 5 5 10 10 10M45 55c0 5 5 10 10 10" stroke="#00b4d8" stroke-width="3"/>
             </svg>
             <div>
-                <div style="font-size:18px;font-weight:bold">Водоканал Донбасса</div>
+                <div style="font-size:18px;font-weight:bold">Вода Донбасса</div>
                 <div style="font-size:12px;color:#90e0ef">Личный кабинет</div>
             </div>
         </div>
@@ -26,96 +79,126 @@
     </header>
 
     <div class="container">
-        <div class="card">
+        <div class="card" style="margin-bottom: 25px;">
+            <h2 class="card-title">Моя статистика</h2>
+            <div class="stats-grid" id="stats-grid"></div>
+        </div>
+        
+        <div class="card" style="margin-bottom: 25px;">
             <h2 class="card-title">Мои назначенные тесты</h2>
             <div id="assignments"></div>
         </div>
         
-        <div class="card mt-20">
-            <h2 class="card-title">Мои результаты</h2>
-            <div id="results"></div>
+        <div class="card">
+            <h2 class="card-title">История прохождений</h2>
+            <div id="history"></div>
         </div>
     </div>
 
     <script src="app.js"></script>
     <script>
-        const user = getCurrentUser();
+        var user = getCurrentUser();
         if (!user || user.role === 'admin' || user.role === 'hr') {
             window.location.href = 'login.html';
         }
         document.getElementById('user-name').textContent = user.name;
 
         function render() {
+            renderStats();
             renderAssignments();
-            renderResults();
+            renderHistory();
+        }
+
+        function renderStats() {
+            var stats = getEmployeeStats(user.id);
+            document.getElementById('stats-grid').innerHTML = 
+                '<div class="stat-card">' +
+                '<div class="stat-value">' + stats.total + '</div>' +
+                '<div class="stat-label">Всего тестов</div>' +
+                '</div>' +
+                '<div class="stat-card">' +
+                '<div class="stat-value">' + stats.completed + '</div>' +
+                '<div class="stat-label">Пройдено</div>' +
+                '</div>' +
+                '<div class="stat-card">' +
+                '<div class="stat-value">' + stats.pending + '</div>' +
+                '<div class="stat-label">Ожидают</div>' +
+                '</div>' +
+                '<div class="stat-card">' +
+                '<div class="stat-value">' + stats.avgScore + '%</div>' +
+                '<div class="stat-label">Средний балл</div>' +
+                '</div>';
         }
 
         function renderAssignments() {
-            const as = getAssignments(user.id);
-            const rs = getResults(user.id);
-            const tests = getTests({ published: true });
+            var as = getAssignments(user.id);
+            var tests = getTests({ published: true });
+            var results = getResults(user.id);
             
-            const pending = as.filter(a => {
-                const r = rs.find(x => x.testId === a.testId);
-                return !r;
+            var pendingAs = as.filter(function(a) {
+                var r = results.find(function(x) { return x.testId === a.testId; });
+                return !r || a.status === 'pending';
             });
 
-            if (pending.length === 0) {
-                document.getElementById('assignments').innerHTML = '<div class="empty-state"><h3>Нет назначенных тестов</h3></div>';
+            if (pendingAs.length === 0) {
+                document.getElementById('assignments').innerHTML = '<div class="empty-state"><h3>Нет ожидающих тестов</h3></div>';
                 return;
             }
 
-            document.getElementById('assignments').innerHTML = `
-                <div class="test-grid">
-                    ${pending.map(a => {
-                        const t = tests.find(x => x.id === a.testId);
-                        if (!t) return '';
-                        const isOverdue = a.dueDate && new Date(a.dueDate) < new Date();
-                        return `
-                        <div class="test-card ${isOverdue ? 'test-card-overdue' : ''}">
-                            <div class="test-card-header">
-                                <h3>${escapeHtml(t.title)}</h3>
-                                <span class="category-badge">${escapeHtml(t.category || '-')}</span>
-                            </div>
-                            <div class="test-card-body">
-                                <p>${escapeHtml(t.description || 'Нет описания')}</p>
-                                <div class="test-meta">
-                                    <span>${t.timeLimit || 30} мин</span>
-                                    <span>${getQuestions(t.id).length} вопросов</span>
-                                    ${a.dueDate ? `<span class="${isOverdue ? 'text-danger' : ''}">Срок: ${formatDate(a.dueDate)}</span>` : ''}
-                                </div>
-                            </div>
-                            <button class="btn btn-primary" onclick="startTest('${t.id}')">Начать тест</button>
-                        </div>`;
-                    }).join('')}
-                </div>`;
+            var html = '<div class="test-grid">';
+            pendingAs.forEach(function(a) {
+                var t = tests.find(function(x) { return x.id === a.testId; });
+                if (!t) return;
+                var isOverdue = a.dueDate && new Date(a.dueDate) < new Date();
+                var attempts = a.attempts || 1;
+                
+                html += '<div class="test-card' + (isOverdue ? ' test-card-overdue' : '') + '">' +
+                '<div class="test-card-header">' +
+                '<h3>' + t.title + '</h3>' +
+                '<span class="category-badge">' + (t.category || '-') + '</span>' +
+                '</div>' +
+                '<div class="test-card-body">' +
+                '<p>' + (t.description || 'Нет описания') + '</p>' +
+                '<div class="test-meta">' +
+                '<span>' + (t.timeLimit || 30) + ' мин</span>' +
+                '<span>' + getQuestions(t.id).length + ' вопросов</span>' +
+                '<span>Попытка: ' + attempts + '</span>' +
+                (a.dueDate ? '<span class="' + (isOverdue ? 'text-danger' : '') + '">Срок: ' + formatDate(a.dueDate) + '</span>' : '') +
+                '</div>' +
+                '</div>' +
+                '<button class="btn btn-primary" onclick="startTest(\'' + t.id + '\')">Начать тест</button>' +
+                '</div>';
+            });
+            
+            html += '</div>';
+            document.getElementById('assignments').innerHTML = html;
         }
 
-        function renderResults() {
-            const rs = getResults(user.id);
-            const tests = getTests();
+        function renderHistory() {
+            var rs = getResults(user.id);
+            var tests = getTests();
             
             if (rs.length === 0) {
-                document.getElementById('results').innerHTML = '<div class="empty-state"><h3>Нет пройденных тестов</h3></div>';
+                document.getElementById('history').innerHTML = '<div class="empty-state"><h3>Нет пройденных тестов</h3></div>';
                 return;
             }
 
-            document.getElementById('results').innerHTML = `
-                <div class="table-wrapper">
-                    <table class="table">
-                        <thead><tr><th>Тест</th><th>Балл</th><th>Оценка</th><th>Дата</th></tr></thead>
-                        <tbody>${rs.map(r => {
-                            const t = tests.find(x => x.id === r.testId);
-                            const g = getGrade(r.percent);
-                            return `<tr>
-                                <td>${escapeHtml(t?.title || '-')}</td>
-                                <td>${r.percent}%</td>
-                                <td><span class="result-badge ${g.class}">${g.grade} (${g.label})</span></td>
-                                <td>${formatDateTime(r.completedAt)}</td>
-                            </tr>`;
-                        }).join('')}</tbody>
-                    </table>
-                </div>`;
+            var html = '';
+            rs.slice().reverse().forEach(function(r) {
+                var t = tests.find(function(x) { return x.id === r.testId; });
+                var g = getGrade(r.percent);
+                html += '<div class="history-item">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center">' +
+                '<div><strong>' + (t ? t.title : '-') + '</strong></div>' +
+                '<span class="result-badge ' + g.class + '">' + g.grade + ' (' + g.label + ')</span>' +
+                '</div>' +
+                '<div style="color:#6c757d;font-size:12px;margin-top:5px">' + 
+                r.percent + '% - ' + formatDateTime(r.completedAt) + 
+                '</div>' +
+                '</div>';
+            });
+            
+            document.getElementById('history').innerHTML = html;
         }
 
         function startTest(testId) {

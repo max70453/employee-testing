@@ -155,14 +155,22 @@
             document.body.appendChild(div);
         };
         
+        function doUpdateUser(id, d) {
+            var u = DB.get('users');
+            var i = u.findIndex(function(x) { return x.id === id; });
+            if (i >= 0) { u[i] = Object.assign({}, u[i], d); DB.set('users', u); }
+        }
+
         window.updateUser = function(id) {
             var f = document.getElementById('edit-user-form');
             var d = { name: f.name.value, email: f.email.value, position: f.position.value, department: f.department.value, role: f.role.value };
             if (f.password.value) d.password = f.password.value;
-            updateUser(id, d);
+            doUpdateUser(id, d);
             closeModal();
             renderUsers();
         };
+        
+        window.renderUsers = renderUsers;
         
         // ==================== TESTS ====================
         function renderTests() {

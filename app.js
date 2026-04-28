@@ -301,7 +301,96 @@ function saveResult(r) {
     r.completedAt = new Date().toISOString();
     results.push(r);
     DB.set('results', results);
+    
+    // Подсчет неудачных попыток для блокировки
+    if (r.percent < 60) {
+        var userResults = getResults(r.userId).filter(function(res) { return res.testId === r.testId; });
+        var failedAttempts = userResults.length;
+        
+        // Блокировка после 3 неудачных попыток
+        if (failedAttempts >= 3) {
+            var users = DB.get('users') || [];
+            var user = users.find(function(u) { return u.id === r.userId; });
+            if (user && user.role === 'employee') {
+                user.active = false;
+                user.blockedFor = r.testId; // Причина блокировки
+                user.blockedAt = new Date().toISOString();
+                DB.set('users', users);
+            }
+        }
+        
+        // Разрешить пересдачу - добавить новую попытку
+        var as = DB.get('assignments') || [];
+        var a = as.find(function(a) { return a.testId === r.testId && a.userId === r.userId; });
+        if (a) {
+            a.attempts = (a.attempts || 1) + 1;
+            a.status = 'pending'; // Готов к пересдаче
+            a.assignedAt = new Date().toISOString();
+            DB.set('assignments', as);
+        }
+    } else {
+        // При успешной сдаче - отметить как пройденный
+        var as = DB.get('assignments') || [];
+        var a = as.find(function(a) { return a.testId === r.testId && a.userId === r.userId; });
+        if (a) {
+            a.status = 'completed';
+            a.completedAt = new Date().toISOString();
+            DB.set('assignments', as);
+        }
+    }
+    
     return r;
+}
+
+// Получить историю попыток для конкретного теста
+function getTestHistory(userId, testId) {
+    return getResults(userId).filter(function(r) { return r.testId === testId; });
+}
+
+// Получить статистику сотрудника
+function getEmployeeStats(userId) {
+    var assignments = getAssignments(userId);
+    var results = getResults(userId);
+    
+    var total = assignments.length;
+    var completed = results.length;
+    var pending = total - completed;
+    
+    // Средний балл
+    var avgScore = completed > 0 
+        ? Math.round(results.reduce(function(s, r) { return s + r.percent; }, 0) / completed) 
+        : 0;
+    
+    // Лучший результат
+    var bestScore = completed > 0 
+        ? Math.max.apply(null, results.map(function(r) { return r.percent; }))
+        : 0;
+    
+    // Количество пересдач
+    var retries = results.length - total > 0 ? results.length - total : 0;
+    
+    return {
+        total: total,
+        completed: completed,
+        pending: pending,
+        avgScore: avgScore,
+        bestScore: bestScore,
+        retries: retries
+    };
+}
+
+// Функция для повторного назначения теста
+function retest(userId, testId) {
+    var as = DB.get('assignments') || [];
+    var a = as.find(function(x) { return x.testId === testId && x.userId === userId; });
+    if (a) {
+        a.attempts = (a.attempts || 0) + 1;
+        a.status = 'pending';
+        a.assignedAt = new Date().toISOString();
+        DB.set('assignments', as);
+        return true;
+    }
+    return false;
 }
 
 function getStats(userId) {
